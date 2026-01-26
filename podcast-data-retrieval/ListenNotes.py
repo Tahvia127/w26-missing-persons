@@ -36,7 +36,7 @@ class ListenNotesAPI:
             response.raise_for_status()
             return response.json()
         
-        except requests.exceptions as e:
+        except requests.exceptions.RequestException as e:
             print(f"API request timed out: {e}")
             return {}
     
