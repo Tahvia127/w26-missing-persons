@@ -7,11 +7,20 @@ from fuzzywuzzy import process
 from datetime import datetime
 from youtube_transcript_api import YouTubeTranscriptApi
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError   
+from googleapiclient.errors import HttpError
+
+YOUTUBE_CLIENT = None
 
 with open('YT_API_KEY.txt', 'r') as f:
     API_KEY = f.read().strip()
 DB_NAME = 'podcast.db'
+
+def get_youtube_client():
+    """Get or create YouTube API client"""
+    global YOUTUBE_CLIENT
+    if YOUTUBE_CLIENT is None:
+        YOUTUBE_CLIENT = build('youtube', 'v3', developerKey=API_KEY)
+    return YOUTUBE_CLIENT
 
 def create_database():
     """Create database schema for storing transcripts and metadata"""
@@ -155,7 +164,7 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
     """
     channel_handle = channel_url.split('@')[-1]
     youtube = build('youtube', 'v3', developerKey=API_KEY)
-    
+
     # Keywords for filtering
     include_keywords = [
         'missing',
@@ -234,7 +243,7 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
     
     try:
         # Get channel ID
-        search_response = youtube.search().list(
+        search_response = youtube.search().list(# pylint: disable=no-member
             part='snippet',
             q=channel_handle,
             type='channel',
@@ -249,7 +258,7 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
         channel_name = search_response['items'][0]['snippet']['title']
         
         # Get uploads playlist
-        channel_response = youtube.channels().list(
+        channel_response = youtube.channels().list( # pylint: disable=no-member
             part='contentDetails',
             id=channel_id
         ).execute()
@@ -266,58 +275,67 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
         
         print(f"Searching through videos with optimized fuzzy matching (threshold: {fuzzy_threshold})...")
         
+        api_calls = 0  # Track API calls for monitoring
+        
         while len(videos) < max_results and total_checked < videos_to_check:
-            playlist_response = youtube.playlistItems().list(
+            # Get playlist items
+            playlist_response = youtube.playlistItems().list(# pylint: disable=no-member
                 part='snippet,contentDetails',
                 playlistId=uploads_playlist_id,
                 maxResults=50,
                 pageToken=next_page_token
             ).execute()
+            api_calls += 1
             
+            # OPTIMIZATION: Collect all video IDs from this page
+            video_ids_batch = []
             for item in playlist_response['items']:
-                total_checked += 1
                 video_id = item['snippet']['resourceId']['videoId']
-                title = item['snippet']['title']
-                
-                # Get full video details for description
-                video_details = youtube.videos().list(
+                video_ids_batch.append(video_id)
+            
+            # Fetch video details in batch
+            if video_ids_batch:
+                video_details_response = youtube.videos().list(# pylint: disable=no-member
                     part='snippet,contentDetails',
-                    id=video_id
+                    id=','.join(video_ids_batch)  # Request up to 50 videos at once
                 ).execute()
+                api_calls += 1
                 
-                if not video_details['items']:
-                    continue
-                
-                snippet = video_details['items'][0]['snippet']
-                description = snippet.get('description', '')
-                
-                # Apply fuzzy filter
-                should_include, reason = should_include_video(title, description)
-                
-                if should_include:
-                    videos.append({
-                        'video_id': video_id,
-                        'title': title,
-                        'description': description,
-                        'channel_name': channel_name,
-                        'published_date': snippet['publishedAt'],
-                        'url': f"https://www.youtube.com/watch?v={video_id}",
-                        'duration': video_details['items'][0]['contentDetails']['duration'],
-                        'match_reason': reason  # Store why it was included
-                    })
-                    filter_stats['included'] += 1
+                # Process all videos from the batch
+                for video_detail in video_details_response['items']:
+                    total_checked += 1
+                    video_id = video_detail['id']
+                    snippet = video_detail['snippet']
+                    title = snippet['title']
+                    description = snippet.get('description', '')
                     
-                    # Print match details for first few
-                    if len(videos) <= 3:
-                        print(f"  ✓ '{title[:50]}...' - {reason}")
+                    # Apply fuzzy filter
+                    should_include, reason = should_include_video(title, description)
                     
-                    if len(videos) >= max_results:
-                        break
-                else:
-                    if 'Excluded' in reason:
-                        filter_stats['excluded'] += 1
+                    if should_include:
+                        videos.append({
+                            'video_id': video_id,
+                            'title': title,
+                            'description': description,
+                            'channel_name': channel_name,
+                            'published_date': snippet['publishedAt'],
+                            'url': f"https://www.youtube.com/watch?v={video_id}",
+                            'duration': video_detail['contentDetails']['duration'],
+                            'match_reason': reason
+                        })
+                        filter_stats['included'] += 1
+                        
+                        # Print match details for first few
+                        if len(videos) <= 3:
+                            print(f"  ✓ '{title[:50]}...' - {reason}")
+                        
+                        if len(videos) >= max_results:
+                            break
                     else:
-                        filter_stats['no_match'] += 1
+                        if 'Excluded' in reason:
+                            filter_stats['excluded'] += 1
+                        else:
+                            filter_stats['no_match'] += 1
             
             next_page_token = playlist_response.get('nextPageToken')
             if not next_page_token:
@@ -468,7 +486,8 @@ def analyze_match_quality():
 def main():
     # Create database
     create_database()
-    
+    youtube = get_youtube_client()
+
     # Channel URL
     channel_urls = {"vanishedpodcast8746": "https://www.youtube.com/@vanishedpodcast8746",
                     "TheUnfoundPodcastChannel": "https://www.youtube.com/@TheUnfoundPodcastChannel",
