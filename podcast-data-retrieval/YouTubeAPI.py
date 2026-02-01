@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import sqlite3
 import pandas as pd
 from fuzzywuzzy import fuzz
@@ -8,6 +9,9 @@ from datetime import datetime
 from youtube_transcript_api import YouTubeTranscriptApi
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from http.cookiejar import MozillaCookieJar
+import requests
+import json
 
 YOUTUBE_CLIENT = None
 
@@ -163,7 +167,7 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
         fuzzy_threshold: Similarity threshold (0-100). Higher = stricter matching
     """
     channel_handle = channel_url.split('@')[-1]
-    youtube = build('youtube', 'v3', developerKey=API_KEY)
+    youtube = get_youtube_client()
 
     # Keywords for filtering
     include_keywords = [
@@ -400,40 +404,90 @@ def save_video_metadata(video_data):
         ))
         conn.commit()
 
-def download_and_save_transcript(video_id: str):
-    """Download transcript and save to database"""
+def load_cookies_from_json():
+    """Load cookies from JSON file"""
     try:
-        # Get transcript
-        transcript_list = YouTubeTranscriptApi.fetch(video_id)
-        
-        # Combine all text
-        full_transcript = ' '.join([entry['text'] for entry in transcript_list])
-        word_count = len(full_transcript.split())
-        
-        # Save to database
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        
-        # Update video record
-        cursor.execute('''
-            UPDATE videos 
-            SET transcript_available = 1, downloaded_date = ?
-            WHERE video_id = ?
-        ''', (datetime.now().isoformat(), video_id))
-        
-        # Insert transcript
-        cursor.execute('''
-            INSERT OR REPLACE INTO transcripts (video_id, full_text, word_count)
-            VALUES (?, ?, ?)
-        ''', (video_id, full_transcript, word_count))
-        
-        conn.commit()
-        conn.close()
-        
-        return True, word_count
-        
+        with open('cookies.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print("  ⚠️  cookies.json not found")
+        return None
     except Exception as e:
-        return False, str(e)
+        print(f"  ⚠️  Error loading cookies: {e}")
+        return None
+
+def download_and_save_transcript(video_id: str, max_retries=3):
+    """Download transcript and save to database with cookie authentication"""
+    
+    for attempt in range(max_retries):
+        try:
+            # Add delay to avoid rate limiting
+            time.sleep(2)
+            
+            # Create a session with cookies
+            session = requests.Session()
+            
+            # Load cookies from JSON
+            cookies_dict = load_cookies_from_json()
+            if cookies_dict:
+                for cookie in cookies_dict:
+                    session.cookies.set(
+                        cookie['name'],
+                        cookie['value'],
+                        domain=cookie.get('domain', '.youtube.com'),
+                        path=cookie.get('path', '/')
+                    )
+                print("  ✓ Cookies loaded from JSON")
+            else:
+                print("  ⚠️  No cookies loaded, trying without...")
+            
+            # Initialize API with custom session
+            ytt_api = YouTubeTranscriptApi(http_client=session)
+            transcript_list = ytt_api.fetch(video_id)
+            
+            # Convert FetchedTranscript to raw data
+            transcript_data = transcript_list.to_raw_data()
+            
+            # Combine all text
+            full_transcript = ' '.join([entry['text'] for entry in transcript_data])
+            word_count = len(full_transcript.split())
+            
+            # Save to database
+            conn = sqlite3.connect(DB_NAME)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE videos 
+                SET transcript_available = 1, downloaded_date = ?
+                WHERE video_id = ?
+            ''', (datetime.now().isoformat(), video_id))
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO transcripts (video_id, full_text, word_count)
+                VALUES (?, ?, ?)
+            ''', (video_id, full_transcript, word_count))
+            
+            conn.commit()
+            conn.close()
+            
+            return True, word_count
+            
+        except Exception as e:
+            error_msg = str(e)
+            
+            # If it's an IP ban, stop trying immediately
+            if "blocked" in error_msg.lower() or "banned" in error_msg.lower():
+                return False, f"IP blocked: {error_msg}"
+            
+            # For other errors, retry
+            if attempt < max_retries - 1:
+                wait_time = 5 * (2 ** attempt)
+                print(f"  Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                return False, error_msg
+    
+    return False, "Max retries exceeded"
     
 def test_fuzzy_thresholds(channel_url):
     """Test different threshold values to find optimal setting"""
@@ -486,7 +540,6 @@ def analyze_match_quality():
 def main():
     # Create database
     create_database()
-    youtube = get_youtube_client()
 
     # Channel URL
     channel_urls = {"vanishedpodcast8746": "https://www.youtube.com/@vanishedpodcast8746",
@@ -541,5 +594,23 @@ def main():
     print(f"Failed: {failed}")
     print(f"Data saved to '{DB_NAME}'")
 
+# if __name__ == "__main__":
+#     main()
+
+# Test with a single video first
 if __name__ == "__main__":
-    main()
+    create_database()
+
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT video_id FROM videos LIMIT 1')
+        result = cursor.fetchone()
+    
+    # Test with one video
+    test_video_id = result[0]  # Replace with an actual video ID from your list
+    success, result = download_and_save_transcript(test_video_id)
+    
+    if success:
+        print(f"✓ Success! {result} words")
+    else:
+        print(f"✗ Failed: {result}")
