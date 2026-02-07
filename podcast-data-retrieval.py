@@ -26,6 +26,20 @@ def get_youtube_client():
         YOUTUBE_CLIENT = build('youtube', 'v3', developerKey=API_KEY)
     return YOUTUBE_CLIENT
 
+def data_exists_in_db(video_id, table_name):
+    """Check if data already exists in the database"""
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute(f'SELECT video_id FROM {table_name} WHERE video_id = ?', (video_id,))
+        return cursor.fetchone() is not None
+
+def get_existing_video_ids():
+    """Get set of all video IDs already in database for bulk checking"""
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT video_id FROM videos')
+        return set(row[0] for row in cursor.fetchall())
+
 def create_database():
     """Create database schema for storing transcripts and metadata"""
     with sqlite3.connect(DB_NAME) as conn:
@@ -273,9 +287,13 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
         videos = []
         next_page_token = None
         total_checked = 0
-        filter_stats = {'included': 0, 'excluded': 0, 'no_match': 0}
+        filter_stats = {'included': 0, 'excluded': 0, 'no_match': 0, 'skipped_existing': 0}
         
         videos_to_check = max_results * 3 if filter_missing_persons else max_results
+        
+        # Get existing video IDs from database once to avoid repeated queries
+        existing_video_ids = get_existing_video_ids()
+        print(f"Found {len(existing_video_ids)} existing videos in database")
         
         print(f"Searching through videos with optimized fuzzy matching (threshold: {fuzzy_threshold})...")
         
@@ -309,6 +327,12 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
                 for video_detail in video_details_response['items']:
                     total_checked += 1
                     video_id = video_detail['id']
+                    
+                    # Skip if video already exists in database
+                    if video_id in existing_video_ids:
+                        filter_stats['skipped_existing'] += 1
+                        continue
+                    
                     snippet = video_detail['snippet']
                     title = snippet['title']
                     description = snippet.get('description', '')
@@ -348,6 +372,7 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
         print(f"\n{'='*60}")
         print(f"Search complete!")
         print(f"Total videos checked: {total_checked}")
+        print(f"Already in database (skipped): {filter_stats['skipped_existing']}")
         print(f"Included: {filter_stats['included']}")
         print(f"Excluded: {filter_stats['excluded']}")
         print(f"No match: {filter_stats['no_match']}")
@@ -418,6 +443,15 @@ def load_cookies_from_json():
 
 def download_and_save_transcript(video_id: str, max_retries=3):
     """Download transcript and save to database with cookie authentication"""
+    
+    # Check if transcript already exists
+    if data_exists_in_db(video_id, 'transcripts'):
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT word_count FROM transcripts WHERE video_id = ?', (video_id,))
+            result = cursor.fetchone()
+            word_count = result[0] if result else 0
+        return True, f"{word_count} (already exists)"
     
     for attempt in range(max_retries):
         try:
@@ -547,34 +581,10 @@ def main():
                     "magillfoote": "https://www.youtube.com/@magillfoote",
                     "TraceEvidencePodcast": "https://www.youtube.com/@TraceEvidencePodcast",
                     "ninainnsted9107": "https://www.youtube.com/@ninainnsted9107"}
-    
-    print("Fetching videos from channels...")
-    videos = dict.fromkeys(channel_urls.keys(), [])
-    for channel, channel_url in channel_urls.items():
-        print(f"\nProcessing channel: {channel}")
-        videos[channel] = get_channel_videos(
-            channel_url,
-            max_results=100,
-            filter_missing_persons=True,
-            fuzzy_threshold=85
-        )
-    
-    # if not any(videos.values()):
-    #     print("No videos found or error occurred")
-    #     return
-    
-    # print(f"\nFound {len(videos)} videos.")
-    # print("Saving metadata to database...")
-    
-    # # Save all video metadata first
-    # for video_list in videos.values():
-    #     for video in video_list:
-    #         save_video_metadata(video)
-    
-    # print("Metadata saved! Now downloading transcripts...\n")
-    
+
     successful = 0
     failed = 0
+    already_exists = 0
     
     for channel, video_list in videos.items():
         print(f"\nChannel: {channel} - Downloading transcripts")
@@ -582,7 +592,11 @@ def main():
             success, result = download_and_save_transcript(video['video_id'])
             
             if success:
-                print(f"✓ {video['title'][:60]}... ({result} words)")
+                if "already exists" in str(result):
+                    print(f"⊙ {video['title'][:60]}... ({result})")
+                    already_exists += 1
+                else:
+                    print(f"✓ {video['title'][:60]}... ({result} words)")
                 successful += 1
             else:
                 print(f"✗ {video['title'][:60]}... (Error: {result})")
@@ -593,6 +607,7 @@ def main():
     print(f"\n{'='*80}")
     print("Download complete!")
     print(f"Successful: {successful}")
+    print(f"Already existed: {already_exists}")
     print(f"Failed: {failed}")
     print(f"Data saved to '{DB_NAME}'")
 
