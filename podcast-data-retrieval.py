@@ -559,19 +559,19 @@ def main():
             fuzzy_threshold=85
         )
     
-    if not any(videos.values()):
-        print("No videos found or error occurred")
-        return
+    # if not any(videos.values()):
+    #     print("No videos found or error occurred")
+    #     return
     
-    print(f"\nFound {len(videos)} videos.")
-    print("Saving metadata to database...")
+    # print(f"\nFound {len(videos)} videos.")
+    # print("Saving metadata to database...")
     
-    # Save all video metadata first
-    for video_list in videos.values():
-        for video in video_list:
-            save_video_metadata(video)
+    # # Save all video metadata first
+    # for video_list in videos.values():
+    #     for video in video_list:
+    #         save_video_metadata(video)
     
-    print("Metadata saved! Now downloading transcripts...\n")
+    # print("Metadata saved! Now downloading transcripts...\n")
     
     successful = 0
     failed = 0
@@ -587,6 +587,8 @@ def main():
             else:
                 print(f"✗ {video['title'][:60]}... (Error: {result})")
                 failed += 1
+
+    
     
     print(f"\n{'='*80}")
     print("Download complete!")
@@ -594,23 +596,5 @@ def main():
     print(f"Failed: {failed}")
     print(f"Data saved to '{DB_NAME}'")
 
-# if __name__ == "__main__":
-#     main()
-
-# Test with a single video first
 if __name__ == "__main__":
-    create_database()
-
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT video_id FROM videos LIMIT 1')
-        result = cursor.fetchone()
-    
-    # Test with one video
-    test_video_id = result[0]  # Replace with an actual video ID from your list
-    success, result = download_and_save_transcript(test_video_id)
-    
-    if success:
-        print(f"✓ Success! {result} words")
-    else:
-        print(f"✗ Failed: {result}")
+    main()
