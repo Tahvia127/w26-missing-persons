@@ -582,6 +582,31 @@ def main():
                     "TraceEvidencePodcast": "https://www.youtube.com/@TraceEvidencePodcast",
                     "ninainnsted9107": "https://www.youtube.com/@ninainnsted9107"}
 
+    print("Fetching videos from channels...")
+    videos = dict.fromkeys(channel_urls.keys(), [])
+    for channel, channel_url in channel_urls.items():
+        print(f"\nProcessing channel: {channel}")
+        videos[channel] = get_channel_videos(
+            channel_url,
+            max_results=100,
+            filter_missing_persons=True,
+            fuzzy_threshold=85
+        )
+
+    if not any(videos.values()):
+        print("No videos found or error occurred")
+        return
+    
+    print(f"\nFound {len(videos)} videos.")
+    print("Saving metadata to database...")
+    
+    # Save all video metadata first
+    for video_list in videos.values():
+        for video in video_list:
+            save_video_metadata(video)
+    
+    print("Metadata saved! Now downloading transcripts...\n")
+
     successful = 0
     failed = 0
     already_exists = 0
@@ -601,6 +626,9 @@ def main():
             else:
                 print(f"✗ {video['title'][:60]}... (Error: {result})")
                 failed += 1
+                if "IP blocked" in str(result):
+                    print("  Stopping further downloads due to IP block.")
+                    break
 
     
     
