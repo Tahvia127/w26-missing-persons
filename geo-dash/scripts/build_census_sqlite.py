@@ -6,8 +6,8 @@ import requests
 
 BASE_URL = "https://api.census.gov/data/2020/dec/dp"
 
-DB_PATH = "census_2020_dp.sqlite"
-CSV_PATH = "census_2020_dp.csv"
+DB_PATH = "geo-dash/data/census_2020_dp.sqlite"
+CSV_PATH = "geo-dash/data/census_2020_dp.csv"
 
 VARS = [
     "DP1_0001C", # Total population
