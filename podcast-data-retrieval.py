@@ -7,6 +7,7 @@ from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 from datetime import datetime
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.proxies import GenericProxyConfig
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from http.cookiejar import MozillaCookieJar
@@ -478,9 +479,12 @@ def download_and_save_transcript(video_id: str, max_retries=3):
             # Initialize API with custom session
             ytt_api = YouTubeTranscriptApi(http_client=session)
             transcript_list = ytt_api.fetch(video_id)
+            print('transcript informortion:')
+            print(transcript_list)
             
             # Convert FetchedTranscript to raw data
             transcript_data = transcript_list.to_raw_data()
+            print(transcript_data)
             
             # Combine all text
             full_transcript = ' '.join([entry['text'] for entry in transcript_data])
@@ -591,7 +595,11 @@ def main():
             max_results=100,
             filter_missing_persons=True,
             fuzzy_threshold=85
-        )
+        ) 
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT video_id FROM videos')
+            existing_video_ids = set(row[0] for row in cursor.fetchall())
 
     if not any(videos.values()):
         print("No videos found or error occurred")
