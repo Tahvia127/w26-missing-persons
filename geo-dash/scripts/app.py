@@ -2,6 +2,7 @@ from dash import Dash, html, dcc, Input, Output, dash_table
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
+import sqlite3
 
 """
 TAB 1: Overview
@@ -47,12 +48,14 @@ STATE_NAMES = {
 app = Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
 
 # --- Load data ---
-namus_df = pd.read_csv('geo-dash/data/namus_data.csv')
-state_summary_df = pd.read_csv('geo-dash/data/state_summary.csv')
+_con = sqlite3.connect('geo-dash/data/combined.sqlite')
+namus_df = pd.read_sql('SELECT * FROM namus_cases', _con)
+state_summary_df = pd.read_sql(
+    'SELECT * FROM state_summary WHERE state_abbrev IS NOT NULL', _con
+)
+_con.close()
 
-# Filter state summary to 50 states + DC only
 state_summary_df = state_summary_df[state_summary_df['State'].isin(STATE_NAMES.keys())].copy()
-state_summary_df['state_name'] = state_summary_df['State'].map(STATE_NAMES)
 
 # --- Pre-compute overview stats ---
 total_cases = len(namus_df)
@@ -63,6 +66,7 @@ pct_non_white = non_white_mask.mean() * 100
 namus_df['age_num'] = namus_df['Missing Age'].str.extract(r'(\d+)').astype(float)
 median_age = int(namus_df['age_num'].median())
 
+state_summary_df = state_summary_df.sort_values('total_cases', ascending=False).reset_index(drop=True)
 top_state_row = state_summary_df.iloc[0]
 top_rate_row = state_summary_df.nlargest(1, 'cases_per_100k').iloc[0]
 
