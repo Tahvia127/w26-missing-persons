@@ -661,4 +661,4 @@ if __name__ == "__main__":
         print("Running FULL analysis (all transcripts)\n")
         print("To run test mode, use: python script.py test\n")
         
-        results_df, summary_df, category_df = main(fuzzy_threshold=85)
+        results_df, summary_df, category_df = main()

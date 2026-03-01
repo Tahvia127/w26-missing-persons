@@ -216,7 +216,6 @@ def get_channel_videos(channel_url, max_results=50, filter_missing_persons=True,
         'subscribe'
     ]
     
-    # UPDATED FUNCTION - REPLACE THE OLD fuzzy_match_keywords AND should_include_video
     def should_include_video(title, description=''):
         """Optimized video filtering with fuzzy matching"""
         if not filter_missing_persons:

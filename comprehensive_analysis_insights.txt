@@ -1,0 +1,30 @@
+================================================================================
+MISSING PERSONS PODCAST ANALYSIS - KEY INSIGHTS
+================================================================================
+
+OVERALL STATISTICS:
+  Total episodes analyzed: 26
+  Unique keywords found: 100
+  Total keyword mentions: 3252
+
+CATEGORY BREAKDOWN:
+  Demographics - Gender/Family Role: 1607 mentions across 26 episodes
+  Framing - Sympathetic: 377 mentions across 25 episodes
+  Demographics - Age: 327 mentions across 25 episodes
+  Framing - Risk: 275 mentions across 24 episodes
+  Demographics - Race/Ethnicity: 230 mentions across 22 episodes
+  Sources: 225 mentions across 22 episodes
+  Coverage - Low Coverage Indicators: 161 mentions across 22 episodes
+  Coverage - High Coverage Indicators: 50 mentions across 20 episodes
+
+FRAMING ANALYSIS:
+  Sympathetic-heavy episodes: 10
+  Risk-focused episodes: 4
+  Balanced episodes: 11
+  Average sympathetic ratio: 0.56
+
+COVERAGE ANALYSIS:
+  High coverage cases: 3
+  Low coverage cases: 17
+
+================================================================================
