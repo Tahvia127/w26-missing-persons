@@ -1,3 +1,8 @@
+> **This is my fork of a [UChicago Data Science Society](https://github.com/uchicago-dss/w26-missing-persons) team project** (Winter 2026).
+> The project analyzes NamUs missing-persons records against media coverage to test the "Missing White Woman Syndrome" empirically.
+
+---
+
 # w26-missing-persons
 
 This project empirically tests the “Missing White Woman Syndrome” by analyzing which missing persons cases receive media attention versus who actually goes missing. Using NamUs (National Missing and Unidentified Persons System), members will compile demographic data on every case, then cross-reference with podcasts, news coverage, and social media discourse. 
